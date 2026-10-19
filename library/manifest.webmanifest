@@ -1,0 +1,16 @@
+{
+  "name": "Ikhlas — библиотека",
+  "short_name": "Библиотека",
+  "description": "Личная электронная библиотека: EPUB, FB2, MOBI, AZW3, PDF, DjVu, TXT, DOCX, RTF",
+  "lang": "ru",
+  "start_url": "/library/",
+  "scope": "/library/",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#0f9d76",
+  "icons": [
+    { "src": "/library/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/library/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/library/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

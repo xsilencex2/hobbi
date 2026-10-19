@@ -144,6 +144,14 @@ foliate-view{position:absolute;inset:0;display:block}
 .btn.danger{background:none;color:var(--red);border:1px solid var(--red)}
 .grow{flex:1}
 
+/* распознавание (OCR) */
+.meter{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin:12px 0 6px}
+.meter i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.ocr-row{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13.5px;margin:10px 0}
+.ocr-row b{width:80px;font-weight:600}
+.ocr-row input[type=number]{width:72px;height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);text-align:center}
+.ocr .pp-note{margin-top:4px}
+
 #lib-toast{position:fixed;bottom:calc(64px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);
   border-radius:11px;padding:11px 16px;font-size:13px;z-index:999;display:none;align-items:center;gap:14px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
 #lib-toast.on{display:flex}

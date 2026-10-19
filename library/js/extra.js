@@ -4,7 +4,7 @@ import { api, esc, fmtSize, fmtDate, pct, plural, toast, humanError, parseDate, 
 import { idb } from './store.js'
 import { loadSettings, saveSettings } from './sync.js'
 import { uploadFile } from './upload.js'
-import { S, bookById, titleOf, render } from './catalog.js'
+import { S, bookById, titleOf, render, loadBooks } from './catalog.js'
 import { indexBook, clearIndex } from './indexer.js'
 
 export const ANN_TYPE = { bookmark: 'Закладка', highlight: 'Выделение', note: 'Заметка', quote: 'Цитата' }
@@ -95,6 +95,8 @@ export function hitHtml(h) {
 }
 
 // ── ДНЕВНИК ЧТЕНИЯ ────────────────────────────────────────────────────────────
+const localDay = ts => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const hm = ts => { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') }
 const fmtDur = s => s < 60 ? `${s} с` : s < 3600 ? `${Math.round(s / 60)} мин` : `${Math.floor(s / 3600)} ч ${Math.round(s % 3600 / 60)} мин`
 
 export async function renderDiary(v) {
@@ -104,18 +106,18 @@ export async function renderDiary(v) {
     const finished = S.books.filter(b => b.finished_at).sort((a, b) => parseDate(b.finished_at) - parseDate(a.finished_at))
     const days = new Map()
     for (const s of sessions) {
-        const d = s.started_at.slice(0, 10)
+        const d = localDay(s.started_ts)
         if (!days.has(d)) days.set(d, [])
         days.get(d).push(s)
     }
     v.innerHTML = `<div class="cols" style="grid-template-columns:minmax(0,2fr) minmax(280px,1fr)">
         <div>${days.size ? [...days].map(([d, list]) => {
             const total = list.reduce((s, x) => s + x.seconds, 0)
-            return `<div class="box" style="margin-bottom:14px"><div class="box-h"><b>${fmtDate(d)}</b><span>${fmtDur(total)}</span></div>
+            return `<div class="box" style="margin-bottom:14px"><div class="box-h"><b>${fmtDate(d + ' 12:00')}</b><span>${fmtDur(total)}</span></div>
                 ${list.map(s => {
                     const b = bookById(s.book_id)
                     return `<div class="item"><div class="grow"><a href="/library/read.php?id=${s.book_id}" style="color:var(--text);font-weight:600;text-decoration:none">${esc(b ? titleOf(b) : 'Удалённая книга')}</a>
-                        <div class="muted" style="font-size:12px">${s.started_at.slice(11, 16)}–${s.ended_at.slice(11, 16)} · ${esc(s.device_name || '')} · ${pct(s.from_fraction)} → ${pct(s.to_fraction)}</div></div>
+                        <div class="muted" style="font-size:12px">${hm(s.started_ts)}–${hm(s.ended_ts)} · ${esc(s.device_name || '')} · ${pct(s.from_fraction)} → ${pct(s.to_fraction)}</div></div>
                         <div class="num" style="font-weight:700">${fmtDur(s.seconds)}</div></div>`
                 }).join('')}</div>`
         }).join('') : '<div class="box"><div class="empty"><div class="empty-ico">📖</div>Дневник заполняется сам, пока вы читаете: время, книга, сколько прочитано.</div></div>'}</div>
@@ -128,7 +130,7 @@ export async function renderDiary(v) {
 export async function renderStats(v) {
     v.innerHTML = '<div class="empty sm">Загрузка статистики…</div>'
     let st, settings
-    try { [st, settings] = await Promise.all([api('stats'), loadSettings()]) } catch (e) { v.innerHTML = `<div class="empty">${esc(humanError(e))}</div>`; return }
+    try { [st, settings] = await Promise.all([api('stats', { params: { tz: new Date().getTimezoneOffset() } }), loadSettings()]) } catch (e) { v.innerHTML = `<div class="empty">${esc(humanError(e))}</div>`; return }
     const year = new Date().getFullYear()
     const goal = +settings.goal_books || 0
     const doneYear = st.finished_by_year[year] || 0
@@ -137,7 +139,7 @@ export async function renderStats(v) {
     // последние 30 дней — минуты чтения
     const days = [...Array(30)].map((_, i) => {
         const d = new Date(Date.now() - (29 - i) * 86400000)
-        const key = d.toISOString().slice(0, 10)
+        const key = localDay(d.getTime())
         return { key, d, min: Math.round((st.days[key] || 0) / 60) }
     })
     const max = Math.max(10, ...days.map(x => x.min))
@@ -152,9 +154,9 @@ export async function renderStats(v) {
         const bw = Math.min(14, cw * .62), bx = L + i * cw + (cw - bw) / 2, h = T + ih - y(x.min)
         if (h > 0) {
             const r = Math.min(4, bw / 2, h)
-            svg += `<path d="M${bx},${T + ih}V${y(x.min) + r}Q${bx},${y(x.min)} ${bx + r},${y(x.min)}H${bx + bw - r}Q${bx + bw},${y(x.min)} ${bx + bw},${y(x.min) + r}V${T + ih}Z" fill="var(--accent)"><title>${fmtDate(x.key)}: ${x.min} мин</title></path>`
+            svg += `<path d="M${bx},${T + ih}V${y(x.min) + r}Q${bx},${y(x.min)} ${bx + r},${y(x.min)}H${bx + bw - r}Q${bx + bw},${y(x.min)} ${bx + bw},${y(x.min) + r}V${T + ih}Z" fill="var(--accent)"><title>${fmtDate(x.key + ' 12:00')}: ${x.min} мин</title></path>`
         }
-        svg += `<rect x="${L + i * cw}" y="${T}" width="${cw}" height="${ih}" fill="transparent"><title>${fmtDate(x.key)}: ${x.min} мин</title></rect>`
+        svg += `<rect x="${L + i * cw}" y="${T}" width="${cw}" height="${ih}" fill="transparent"><title>${fmtDate(x.key + ' 12:00')}: ${x.min} мин</title></rect>`
         if (i % 5 === 4 || i === 29) svg += `<text x="${bx + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${x.d.getDate()}.${String(x.d.getMonth() + 1).padStart(2, '0')}</text>`
     })
     svg += '</svg>'
@@ -170,7 +172,7 @@ export async function renderStats(v) {
         <div class="cols">
             <div class="box"><div class="box-h"><b>Минуты чтения по дням</b><span>последние 30 дней · наведите на столбец</span></div><div class="box-b">${svg}
                 <details style="margin-top:8px;font-size:12px"><summary class="muted">Таблицей</summary>
-                <div style="columns:3;margin-top:6px">${days.filter(x => x.min).map(x => `<div>${fmtDate(x.key)} — ${x.min} мин</div>`).join('') || 'Пока нет данных'}</div></details></div></div>
+                <div style="columns:3;margin-top:6px">${days.filter(x => x.min).map(x => `<div>${fmtDate(x.key + ' 12:00')} — ${x.min} мин</div>`).join('') || 'Пока нет данных'}</div></details></div></div>
             <div class="box"><div class="box-h"><b>Цель на год</b></div><div class="box-b">
                 <form id="goal-f" style="display:flex;gap:8px;align-items:center"><input class="inp" type="number" min="0" max="1000" name="goal" value="${goal || ''}" placeholder="Сколько книг" style="width:140px"><button class="btn">Сохранить</button></form>
                 <dl class="kv" style="margin-top:14px">
@@ -224,6 +226,12 @@ export async function renderSettingsExtra(el) {
         <p class="muted" style="font-size:12px">ZIP с оригиналами, версиями для чтения, обложками и всеми данными (library.json). Восстановление не дублирует книги, которые уже есть, и сверяет контрольные суммы каждого файла.</p>
         <div id="bk-report" style="margin-top:10px"></div>
         <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:6px">Доступ для ИИ-помощника</div>
+            <p class="muted" style="font-size:12px;margin-bottom:8px">Ключ даёт внешнему ИИ-помощнику доступ <b>только на чтение</b> к каталогу, заметкам и проиндексированному тексту — чтобы спрашивать «что я читал о…», «собери мои цитаты по теме». Файлы книг по ключу не отдаются, изменить ничего нельзя. Адрес: <code>${esc(location.origin)}/api/library_ai.php</code>, ключ — в заголовке <code>Authorization: Bearer …</code>.</p>
+            <div id="ai-list" style="font-size:13px;margin-bottom:8px"></div>
+            <button class="btn sm ghost" id="ai-add">+ Создать ключ</button>
+        </div>
+        <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px">
             <button class="btn sm danger" id="wipe">Удалить всю библиотеку…</button>
             <p class="muted" style="font-size:12px;margin-top:6px">Удаляет книги, заметки и историю с сервера. Сначала скачайте полный архив.</p>
         </div>
@@ -267,16 +275,49 @@ export async function renderSettingsExtra(el) {
         e.target.value = ''
         if (!file) return
         const rep = $('#bk-report', el)
-        rep.innerHTML = `<div class="muted" style="font-size:13px">Загрузка архива 0%…</div>`
+        const show = t => rep.innerHTML = `<div class="muted" style="font-size:13px">${esc(t)}</div>`
+        if (mode === 'restore' && !confirm('Восстановить библиотеку из архива?\n\nКниги, которые уже есть, не дублируются. Заметки, закладки и позиции из архива добавятся к текущим; более свежие правки не перезаписываются.')) return
         try {
-            const r = await uploadFile(file, { as: mode, extra: {}, onProgress: f => rep.innerHTML = `<div class="muted" style="font-size:13px">Загрузка архива ${Math.round(f * 100)}%…</div>` })
-            const x = r.report
+            show('Загрузка архива 0%…')
+            const up = await uploadFile(file, { purpose: 'backup', as: 'backup', onProgress: f => show(`Загрузка архива ${Math.round(f * 100)}%…`) })
+            const x = { books: up.books, ok: 0, added: 0, skipped: 0, annotations: 0, errors: [] }
+            for (let offset = 0; ;) {
+                show(`${mode === 'verify' ? 'Проверка' : 'Восстановление'}: ${offset} из ${up.books} ${plural(up.books, 'книги', 'книг', 'книг')}…`)
+                const r = await api('restore_step', { body: { backup_id: up.backup_id, mode, offset } })
+                for (const k of ['ok', 'added', 'skipped', 'annotations']) x[k] += r.report[k]
+                x.errors.push(...r.report.errors)
+                offset = r.offset
+                if (r.done) break
+            }
             rep.innerHTML = `<div class="alert ${x.errors.length ? 'err' : ''}" style="display:block">
                 <b>${mode === 'verify' ? 'Проверка архива' : 'Восстановление'}: ${x.errors.length ? 'есть проблемы' : 'всё в порядке'}</b><br>
                 Книг в архиве: ${x.books} · файлы целы: ${x.ok}${mode === 'restore' ? ` · добавлено: ${x.added} · уже были: ${x.skipped} · заметок: ${x.annotations}` : ''}
                 ${x.errors.length ? `<ul class="warns" style="margin-top:8px">${x.errors.slice(0, 30).map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</div>`
-            if (mode === 'restore') render()
+            if (mode === 'restore') await loadBooks()
         } catch (x) { rep.innerHTML = `<div class="alert err">${esc(humanError(x))}</div>` }
+    }
+    const aiList = async () => {
+        const box = $('#ai-list', el)
+        try {
+            const { tokens } = await api('tokens')
+            box.innerHTML = tokens.map(t => `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span class="grow">🔑 ${esc(t.name)} · создан ${fmtDate(t.created_at)}${t.last_used_at ? ' · использован ' + fmtDate(t.last_used_at, true) : ' · ещё не использовался'}</span><button class="btn sm ghost" data-tokdel="${t.id}">Отозвать</button></div>`).join('') || '<span class="muted">Ключей нет</span>'
+            box.querySelectorAll('[data-tokdel]').forEach(b => b.onclick = async () => {
+                if (!confirm('Отозвать ключ? Помощник с этим ключом потеряет доступ.')) return
+                await api('token_del', { method: 'DELETE', params: { id: b.dataset.tokdel } })
+                aiList()
+            })
+        } catch (x) { box.textContent = humanError(x) }
+    }
+    aiList()
+    $('#ai-add', el).onclick = async () => {
+        const name = prompt('Для чего ключ? (например: «Claude»)', 'ИИ-помощник')
+        if (name === null) return
+        try {
+            const { token } = await api('token_add', { body: { name } })
+            await navigator.clipboard?.writeText(token).catch(() => {})
+            prompt('Ключ создан и скопирован. Сохраните его — повторно он не показывается:', token)
+            aiList()
+        } catch (x) { toast(humanError(x), { error: true }) }
     }
     $('#wipe', el).onclick = async () => {
         const word = prompt('Это удалит ВСЮ библиотеку с сервера: книги, заметки, историю. Отменить нельзя.\n\nСначала скачайте полный архив. Для подтверждения введите слово УДАЛИТЬ')

@@ -451,7 +451,11 @@ async function runSearch(query) {
     if (n <= 0 && ['pdf', 'djvu'].includes(engine.kind) && book.has_text === false) {
         try {
             const r = await api('search', { params: { q: query, book_id: book.id } })
-            for (const h of r.hits) add({ label: `Страница ${h.locator?.page} · распознанный текст`, excerpt: { pre: '', match: h.snippet, post: '' }, target: { page: h.locator?.page, query } })
+            for (const h of r.hits) {
+                const at = Math.max(0, h.snippet.toLowerCase().indexOf(query.toLowerCase()))
+                add({ label: `Страница ${h.locator?.page} · распознанный текст`, target: { page: h.locator?.page, query },
+                      excerpt: { pre: h.snippet.slice(0, at), match: h.snippet.slice(at, at + query.length), post: h.snippet.slice(at + query.length) } })
+            }
             n = r.hits.length
             if (!n) { note.textContent = r.ocr ? 'Ничего не найдено в распознанном тексте' : 'В этом документе нет текстового слоя. Чтобы искать, распознайте текст (меню ⋯ → «Распознать текст»).'; return }
         } catch (e) { note.textContent = humanError(e); return }

@@ -10,8 +10,9 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/lib_config.php';
+require_once __DIR__ . '/lib_zip.php';
 
-const LIB_SCHEMA = 1;
+const LIB_SCHEMA = 2;
 
 // ── РЕЕСТР ФОРМАТОВ ───────────────────────────────────────────────────────────
 // convert = true — для чтения нужна производная EPUB-версия (её делает браузер).
@@ -241,54 +242,48 @@ function libEnsureTables(PDO $pdo): void {
         INDEX idx_user_time (user_id, started_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+    // Текст книг для поиска: извлечённый (source = text) и распознанный OCR (source = ocr).
+    // Хранится отдельно от оригиналов; оригинальные файлы не меняются.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS lib_text (
+        id       BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id  INT NOT NULL,
+        book_id  INT NOT NULL,
+        source   VARCHAR(8) NOT NULL,                            -- text | ocr
+        seq      INT NOT NULL,                                   -- номер куска / страницы
+        locator  VARCHAR(500) NOT NULL,                          -- JSON: {type:'section', index} | {type:'page', page}
+        body     MEDIUMTEXT NOT NULL,
+        UNIQUE KEY uq_piece (book_id, source, seq),
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // Ключи доступа для внешних ИИ-помощников (только чтение). Хранится только хэш.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS lib_tokens (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        user_id      INT NOT NULL,
+        name         VARCHAR(80) NOT NULL DEFAULT '',
+        token_hash   CHAR(64) NOT NULL,
+        created_at   DATETIME NOT NULL,
+        last_used_at DATETIME NULL,
+        UNIQUE KEY uq_hash (token_hash),
+        INDEX idx_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    // схема 2: индекс текста и OCR
+    libAddColumn($pdo, 'lib_books', 'indexed_at', 'DATETIME NULL');
+    libAddColumn($pdo, 'lib_books', 'ocr_status', "VARCHAR(12) NOT NULL DEFAULT ''");   // '' | partial | done
+    libAddColumn($pdo, 'lib_books', 'ocr_pages',  'INT NOT NULL DEFAULT 0');
+    libAddColumn($pdo, 'lib_books', 'ocr_lang',   "VARCHAR(40) NOT NULL DEFAULT ''");
+
     @file_put_contents($marker, date('c'));
 }
 
+function libAddColumn(PDO $pdo, string $table, string $col, string $def): void {
+    $st = $pdo->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+    $st->execute([$table, $col]);
+    if (!(int)$st->fetchColumn()) $pdo->exec("ALTER TABLE $table ADD COLUMN $col $def");
+}
+
 // ── ОПРЕДЕЛЕНИЕ ФОРМАТА ───────────────────────────────────────────────────────
-
-// Список файлов ZIP по центральному каталогу (без расширения zip).
-function libZipList(string $path): ?array {
-    $size = filesize($path);
-    if ($size < 22) return null;
-    $fh = fopen($path, 'rb');
-    $tail = min($size, 65557);
-    fseek($fh, $size - $tail);
-    $buf = fread($fh, $tail);
-    $eocd = strrpos($buf, "PK\x05\x06");
-    if ($eocd === false) { fclose($fh); return null; }
-    $e = unpack('vdisk/vcdDisk/vcountDisk/vcount/Vsize/Voffset', substr($buf, $eocd + 4, 16));
-    if ($e['count'] > 20000 || $e['offset'] + $e['size'] > $size) { fclose($fh); return null; }
-    fseek($fh, $e['offset']);
-    $cd = fread($fh, $e['size']);
-    fclose($fh);
-    $list = [];
-    $p = 0;
-    for ($i = 0; $i < $e['count']; $i++) {
-        if (substr($cd, $p, 4) !== "PK\x01\x02") break;
-        $h = unpack('vver/vneed/vflags/vmethod/vtime/vdate/Vcrc/Vcsize/Vusize/vnlen/vxlen/vclen/vdisk/viattr/Vxattr/Voffset', substr($cd, $p + 4, 42));
-        $name = substr($cd, $p + 46, $h['nlen']);
-        $list[$name] = ['method' => $h['method'], 'csize' => $h['csize'], 'usize' => $h['usize'],
-                        'offset' => $h['offset'], 'encrypted' => (bool)($h['flags'] & 1)];
-        $p += 46 + $h['nlen'] + $h['xlen'] + $h['clen'];
-    }
-    return $list;
-}
-
-// Прочитать небольшой файл из ZIP (не больше $max байт после распаковки).
-function libZipRead(string $path, array $entry, int $max = 2000000): ?string {
-    if ($entry['usize'] > $max || $entry['csize'] > $max || $entry['encrypted']) return null;
-    $fh = fopen($path, 'rb');
-    fseek($fh, $entry['offset']);
-    $h = fread($fh, 30);
-    if (substr($h, 0, 4) !== "PK\x03\x04") { fclose($fh); return null; }
-    $l = unpack('vnlen/vxlen', substr($h, 26, 4));
-    fseek($fh, $entry['offset'] + 30 + $l['nlen'] + $l['xlen']);
-    $data = $entry['csize'] > 0 ? fread($fh, $entry['csize']) : '';
-    fclose($fh);
-    if ($entry['method'] === 0) return $data;
-    if ($entry['method'] === 8) { $out = @gzinflate($data, $max); return $out === false ? null : $out; }
-    return null;
-}
 
 /**
  * Формат по содержимому файла, а не по расширению.
@@ -443,6 +438,10 @@ function libBookOut(array $b, bool $full = false): array {
         'finished_at'   => $b['finished_at'],
         'created_at'    => $b['created_at'],
         'updated_at'    => $b['updated_at'],
+        'indexed'       => !empty($b['indexed_at']),
+        'ocr_status'    => (string)($b['ocr_status'] ?? ''),
+        'ocr_pages'     => (int)($b['ocr_pages'] ?? 0),
+        'ocr_lang'      => (string)($b['ocr_lang'] ?? ''),
         'v'             => substr(md5($b['updated_at'] . $b['converter_version'] . $b['derived_size'] . $b['cover_type']), 0, 8),
     ];
     if ($full) {

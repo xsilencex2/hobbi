@@ -37,7 +37,7 @@ Options -Indexes
 
 # Конфиги — в них пароль от базы и ключ Google.
 # Для PHP они по-прежнему доступны, закрыт только прямой заход из браузера.
-<FilesMatch "^(db|google_config|auth|theme|lib_core|lib_config)\.php$">
+<FilesMatch "^(db|google_config|auth|theme|lib_core|lib_config|lib_zip)\.php$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
@@ -57,3 +57,21 @@ Options -Indexes
     Deny from all
   </IfModule>
 </FilesMatch>
+
+
+# ═════════════════════════════════════════════════════════════════
+#  БИБЛИОТЕКА: типы файлов движков чтения
+#  Без этого браузер откажется запускать pdf.js (.mjs) и PWA-манифест.
+# ═════════════════════════════════════════════════════════════════
+<IfModule mod_mime.c>
+  AddType text/javascript .mjs
+  AddType application/wasm .wasm
+  AddType application/manifest+json .webmanifest
+  AddType application/octet-stream .bcmap .pfb .traineddata
+</IfModule>
+
+# Загрузка книг идёт кусками по 2 МБ — эти лимиты с запасом
+<IfModule mod_php.c>
+  php_value post_max_size 16M
+  php_value max_execution_time 300
+</IfModule>

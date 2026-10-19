@@ -1,5 +1,6 @@
 <?php
 require_once 'includes/auth.php';
+require_once 'includes/lib_core.php';
 requireAuth();
 
 $me       = currentUser();
@@ -13,6 +14,10 @@ $items = [
     ['icon' => '📖', 'title' => 'Куръан',             'sub' => 'Чтение и прогресс',               'href' => '#',           'ready' => false],
     ['icon' => '🧮', 'title' => 'Закят, калькулятор', 'sub' => 'Расчёт закята',                  'href' => '#',           'ready' => false],
 ];
+// Библиотека видна только тем, кто есть в LIB_ALLOWED_EMAILS (includes/lib_config.php)
+if (libAllowed()) {
+    array_splice($items, 2, 0, [['icon' => '📚', 'title' => 'Библиотека', 'sub' => 'Книги, чтение, заметки', 'href' => '/library/', 'ready' => true]]);
+}
 ?>
 <!DOCTYPE html>
 <html lang="ru">

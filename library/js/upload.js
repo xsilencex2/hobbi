@@ -3,8 +3,8 @@
 import { api, sleep } from './common.js'
 
 // opts: { onProgress(fraction), signal, as: 'derived', extra: {book_id, converter, converter_version} }
-export async function uploadFile(file, { onProgress, signal, as, extra } = {}) {
-    const init = await api('upload_init', { body: { name: file.name, size: file.size, last_modified: file.lastModified || 0 }, signal })
+export async function uploadFile(file, { onProgress, signal, as, extra, purpose } = {}) {
+    const init = await api('upload_init', { body: { name: file.name, size: file.size, last_modified: file.lastModified || 0, purpose }, signal })
     let offset = init.received
     const chunk = init.chunk
     onProgress?.(offset / file.size)

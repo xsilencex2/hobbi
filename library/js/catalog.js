@@ -3,7 +3,8 @@ import { api, esc, fmtSize, fmtDate, fmtAgo, pct, plural, toast, fileUrl, humanE
 import { FORMATS, STATUS, READ_STATUS, canRead, needsProcessing, outdatedConverter } from './formats.js'
 import { uploadFile } from './upload.js'
 import { processBook } from './process.js'
-import { sync, flush, syncState } from './sync.js'
+import { sync, flush, syncState, loadSettings } from './sync.js'
+import { indexBook } from './indexer.js'
 import { idb } from './store.js'
 import * as offline from './offline.js'
 import * as extra from './extra.js'
@@ -93,7 +94,7 @@ export function upsertBook(b) {
 }
 
 // ── ЗАГРУЗКА ДАННЫХ ───────────────────────────────────────────────────────────
-async function loadBooks() {
+export async function loadBooks() {
     try {
         const r = await api('books')
         S.books = r.books
@@ -110,7 +111,8 @@ async function loadBooks() {
         const cached = await offline.cachedCatalog().catch(() => null)
         if (!cached) { $('#view').innerHTML = `<div class="empty"><div class="empty-ico">📡</div>${esc(humanError(e))}</div>`; return }
         Object.assign(S, { books: cached.books, cols: cached.collections, used: cached.used, quota: cached.quota, loaded: true, offlineMode: true })
-        S.links = new Map(cached.links.map(([b, c]) => [b, new Set([c])]))
+        S.links = new Map()
+        for (const [b, c] of cached.links) { if (!S.links.has(b)) S.links.set(b, new Set()); S.links.get(b).add(c) }
         toast('Нет связи — показана сохранённая копия библиотеки', { error: true })
     }
     S.offlineIds = new Set(await offline.offlineIds().catch(() => []))
@@ -394,7 +396,7 @@ function renderDrawer(b, positions) {
             ${b.derived ? `<a class="btn ghost" href="${fileUrl(b, 'derived', true)}">⬇ EPUB-версия</a>` : ''}
             ${readable ? `<button class="btn ghost" id="dr-off">${S.offlineIds.has(b.id) ? '✓ На устройстве' : '⬇ Сохранить на устройстве'}</button>` : ''}
             ${fmt && !b.drm && b.status !== 'unsupported' ? `<button class="btn ghost" id="dr-re">↻ ${b.status === 'error' ? 'Повторить обработку' : 'Переобработать'}</button>` : ''}
-            ${fmt && ['pdf', 'djvu'].includes(b.format) && b.has_text === false ? `<a class="btn ghost" href="/library/read.php?id=${b.id}&ocr=1">Распознать текст (OCR)</a>` : ''}
+            ${fmt && ['pdf', 'djvu'].includes(b.format) && b.has_text === false ? `<a class="btn ghost" href="/library/read.php?id=${b.id}&ocr=1">${b.ocr_status === 'done' ? 'Распознать заново (OCR)' : b.ocr_pages ? 'Продолжить распознавание (OCR)' : 'Распознать текст (OCR)'}</a>` : ''}
             <button class="btn danger" id="dr-del">Удалить</button>
         </div>
         <div id="dr-stage" class="muted" style="font-size:13px;margin:-8px 0 14px"></div>
@@ -435,6 +437,8 @@ function renderDrawer(b, positions) {
             <dt>Размер</dt><dd>${fmtSize(b.orig_size)}</dd>
             ${b.pages ? `<dt>Страниц</dt><dd>${b.pages}</dd>` : ''}
             ${b.has_text != null ? `<dt>Текстовый слой</dt><dd>${b.has_text ? 'есть' : 'нет (скан)'}</dd>` : ''}
+            ${b.has_text === false ? `<dt>Распознано (OCR)</dt><dd>${b.ocr_pages ? `${b.ocr_pages} из ${b.pages || '?'} стр.${b.ocr_lang ? ' · ' + esc(b.ocr_lang) : ''}` : 'нет'}</dd>` : ''}
+            <dt>Поиск по тексту</dt><dd>${b.indexed || b.ocr_pages ? 'текст проиндексирован' : 'не проиндексирован'}</dd>
             <dt>SHA-256</dt><dd class="num" style="font-size:11px">${esc(b.sha256)}</dd>
             <dt>Добавлена</dt><dd>${fmtDate(b.created_at, true)}</dd>
             ${b.last_opened_at ? `<dt>Открыта</dt><dd>${fmtDate(b.last_opened_at, true)}</dd>` : ''}
@@ -573,6 +577,12 @@ async function runQueue() {
                 updateQueueItem(it)
                 const b = await processBook(r.book, { file: it.file, onStage: s => { it.msg = s; updateQueueItem(it) } })
                 upsertBook(b)
+                if (isReady(b) && (await loadSettings().catch(() => ({}))).index_content !== false) {
+                    try {
+                        await indexBook(b, f => { it.msg = 'Индексация текста для поиска ' + pct(f); updateQueueItem(it) })
+                        upsertBook({ ...b, indexed: true })
+                    } catch (e) { console.warn('индексация', e) }
+                }
                 it.state = isReady(b) ? 'done' : 'error'
                 it.msg = isReady(b) ? STATUS[b.status] : (b.error || STATUS[b.status])
             }
