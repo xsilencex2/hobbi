@@ -1,0 +1,59 @@
+DirectoryIndex index.php index.html
+Options -Indexes
+
+# ═════════════════════════════════════════════════════════════════
+#  АДРЕС САЙТА
+#  Вход через Google работает только по https и только с того адреса,
+#  который прописан в Authorized JavaScript origins. Поэтому приводим
+#  все варианты к одному:  https://ikhlas.website
+# ═════════════════════════════════════════════════════════════════
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # http → https
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # www → без www (для Google это разные адреса)
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^ https://%1%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# ═════════════════════════════════════════════════════════════════
+#  ЗАКРЫТЫЕ ФАЙЛЫ
+# ═════════════════════════════════════════════════════════════════
+
+# Скрытые файлы: .htaccess, .git и подобные
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Конфиги — в них пароль от базы и ключ Google.
+# Для PHP они по-прежнему доступны, закрыт только прямой заход из браузера.
+<FilesMatch "^(db|google_config|auth|theme|lib_core|lib_config)\.php$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Инструкция для себя — посторонним её видеть незачем
+<FilesMatch "\.(md|sql|log|bak|7z|zip)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
