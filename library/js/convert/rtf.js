@@ -86,10 +86,12 @@ export async function convert(file, { name }) {
     }
     if (!body.textContent.trim() && !body.querySelector('img, svg')) throw new Error('В документе нет текста')
 
+    // некоторые программы пишут в \info вопросительные знаки вместо кириллицы — это не название
+    const clean = s => { s = String(s || '').trim(); return /^[?\s.,-]*$/.test(s) ? '' : s }
     const m = {
-        title: (meta.title || '').trim(),
-        authors: (meta.author || '').trim(),
-        description: (meta.subject || '').trim(),
+        title: clean(meta.title),
+        authors: clean(meta.author),
+        description: clean(meta.subject),
     }
     const stem = name.replace(/\.[^.]+$/, '')
     const r = htmlToEpub(body, { title: m.title || stem, authors: m.authors ? [m.authors] : [], language: 'ru', warnings })

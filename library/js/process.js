@@ -156,7 +156,7 @@ async function extractPdf(book) {
         const warnings = hasText ? [] : ['В PDF нет текстового слоя (похоже на скан): поиск и выделение текста недоступны, пока не выполнено распознавание (OCR)']
         return { meta: { title, authors }, toc, pages, hasText, cover, warnings }
     } finally {
-        pdf.destroy()
+        task.destroy()
     }
 }
 
@@ -260,7 +260,7 @@ export async function processBook(book, { file, force = false, onStage = () => {
         } })
         return r.book
     } catch (e) {
-        console.error(e)
+        console.warn('обработка книги:', e)
         const r = await api('process_result', { body: { id: book.id, ok: false, error: humanError(e) } }).catch(() => null)
         return r?.book || { ...book, status: 'error', error: humanError(e) }
     }

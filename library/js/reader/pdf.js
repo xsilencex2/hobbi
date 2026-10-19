@@ -259,6 +259,6 @@ export async function open(ctx) {
         },
 
         setSettings(s) { settings = s; applyView() },
-        destroy() { tools.remove(); viewer.cleanup?.(); pdf.destroy(); wrap.remove() },
+        destroy() { tools.remove(); viewer.cleanup?.(); task.destroy(); wrap.remove() },
     }
 }

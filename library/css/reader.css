@@ -1,4 +1,6 @@
 /* ── Читалка: темы светлая · тёплая · тёмная ── */
+/* hidden всегда прячет, даже если у блока задан display */
+[hidden]{display:none!important}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{--bg:#fbfbf9;--surface:#ffffff;--surface2:#f0f0ec;--border:#e2e2dc;--text:#1d1d1b;--muted:#77776f;--accent:#0f9d76;--red:#d14b4b;
   --shadow:0 10px 34px rgba(0,0,0,.18)}

@@ -35,14 +35,15 @@ export async function indexBook(book, onProgress = () => {}) {
     if (src.engine === 'pdf') {
         if (book.has_text === false) return send(true)          // скан: ищем по OCR
         const lib = await pdfjs()
-        const pdf = await lib.getDocument({ url: fileUrl(book, 'original'), ...PDF_OPTS, disableAutoFetch: true, disableStream: true }).promise
+        const task = lib.getDocument({ url: fileUrl(book, 'original'), ...PDF_OPTS, disableAutoFetch: true, disableStream: true })
+        const pdf = await task.promise
         try {
             for (let p = 1; p <= pdf.numPages; p++) {
                 const tc = await (await pdf.getPage(p)).getTextContent().catch(() => null)
                 await add({ type: 'page', page: p }, (tc?.items || []).map(i => i.str + (i.hasEOL ? ' ' : '')).join(''))
                 onProgress(p / pdf.numPages)
             }
-        } finally { pdf.destroy() }
+        } finally { task.destroy() }
     } else if (src.engine === 'djvu') {
         if (book.has_text === false) return send(true)
         const file = await getOfflineFile(book).catch(() => null) || await fetchBook(book, 'original')

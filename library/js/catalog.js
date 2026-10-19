@@ -33,7 +33,7 @@ const PALETTE = ['#2f6f5e', '#6b4f8a', '#8a5a3b', '#3b5f8a', '#7a3b4f', '#4f6b3b
 function colorOf(s) {
     let h = 0
     for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0
-    const a = PALETTE[h % PALETTE.length], b = PALETTE[(h >> 4) % PALETTE.length]
+    const a = PALETTE[h % PALETTE.length], b = PALETTE[(h >>> 4) % PALETTE.length]
     return `linear-gradient(160deg, ${a}, ${b})`
 }
 
